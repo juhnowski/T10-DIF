@@ -11,3 +11,8 @@ Record structure:
 cargo build
 sudo ./target/debug/DIF
 ```
+
+# Test
+```bash
+cargo test
+```

@@ -12,6 +12,28 @@ struct T10Dif {
     ref_tag: u32,
 }
 
+fn write_dif_to_fd(fd: i32, offset: i64, data: &T10Dif) -> std::io::Result<()> {
+    unsafe {
+        let mut ptr: *mut libc::c_void = std::ptr::null_mut();
+        if libc::posix_memalign(&mut ptr, 4096, 4096) != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Ошибка выделения выровненной памяти",
+            ));
+        }
+
+        std::ptr::write(ptr as *mut T10Dif, *data);
+
+        let res = libc::pwrite(fd, ptr, 4096, offset);
+        libc::free(ptr);
+
+        if res == -1 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = "/dev/sdb1";
 
@@ -62,4 +84,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe { free(ptr) };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_dif_write_read() {
+        // Создаем временный файл
+        let temp_file = NamedTempFile::new().unwrap();
+        let fd = temp_file.as_raw_fd();
+
+        let input = T10Dif {
+            guard_tag: 0xDEAD,
+            app_tag: 0xbeef,
+            ref_tag: 42,
+        };
+
+        // Записываем (в тестах можно без O_DIRECT для простоты, либо включить его через fcntl)
+        write_dif_to_fd(fd, 0, &input).expect("Write failed");
+
+        // Проверяем результат
+        let mut file = temp_file.reopen().unwrap();
+        let mut buffer = vec![0u8; 8]; // Размер T10Dif
+        file.read_exact(&mut buffer).unwrap();
+
+        let output: T10Dif = *bytemuck::from_bytes(&buffer);
+
+        assert_eq!(input.guard_tag, output.guard_tag);
+        assert_eq!(input.ref_tag, output.ref_tag);
+    }
 }
