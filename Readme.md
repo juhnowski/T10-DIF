@@ -6,10 +6,16 @@ Record structure:
 2. Application Tag (2 bytes): to indicate the data type.
 3. Reference Tag (4 bytes): part of the LBA (Logical Block Address), to prevent writing a block to the wrong location.
 
-# Run
+# Run with file
 ```bash
 cargo build
-sudo ./target/debug/DIF
+cargo run --example demo
+```
+
+# Run with real block device
+```bash
+cargo build --example hardware_test
+sudo ./target/debug/examples/hardware_test
 ```
 
 # Test
