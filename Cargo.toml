@@ -1,5 +1,5 @@
 [package]
-name = "DIF"
+name = "t10_dif_storage"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,6 +7,7 @@ edition = "2024"
 # memmap2 = "0.9"
 bytemuck = { version = "1.14", features = ["derive"] }
 libc = "0.2"
+crc = "3.0"
 
 [dev-dependencies]
 tempfile = "3"
