@@ -1,9 +1,13 @@
 use bytemuck::{Pod, Zeroable};
 use crc::{Algorithm, Crc};
+use libc::ioctl;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::AsRawFd;
+
+// Магическое число для получения размера логического сектора в Linux
+const BLKSSZGET: u64 = 0x1204;
 
 /// Спецификация CRC-16 T10-DIF
 /// Полином: 0x8BB7, Начальное значение: 0x0000, Конечный XOR: 0x0000
@@ -89,6 +93,26 @@ pub struct DifStorage {
 }
 
 impl DifStorage {
+    /// Определяет размер логического сектора устройства (обычно 512 или 4096)
+    pub fn get_sector_size(&self) -> io::Result<usize> {
+        let mut sector_size: i32 = 0;
+        let fd = self.file.as_raw_fd();
+
+        unsafe {
+            if ioctl(fd, BLKSSZGET, &mut sector_size) == -1 {
+                // Если это не блочное устройство (а обычный файл),
+                // возвращаем стандартные 4096 для совместимости
+                return Ok(4096);
+            }
+        }
+
+        if sector_size <= 0 {
+            return Ok(4096);
+        }
+
+        Ok(sector_size as usize)
+    }
+
     /// Открывает устройство или файл с поддержкой Direct IO
     pub fn open(path: &str) -> io::Result<Self> {
         let file = OpenOptions::new()

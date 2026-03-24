@@ -6,6 +6,8 @@ Record structure:
 2. Application Tag (2 bytes): to indicate the data type.
 3. Reference Tag (4 bytes): part of the LBA (Logical Block Address), to prevent writing a block to the wrong location.
 
+The library determines the minimum sector size of a disk.
+
 # Run with file
 ```bash
 cargo build
@@ -13,9 +15,16 @@ cargo run --example demo
 ```
 
 # Run with real block device
+With fixed block size = 4Kb
 ```bash
 cargo build --example hardware_test
 sudo ./target/debug/examples/hardware_test
+```
+
+With real block size supported by device /dev/sdb
+```bash
+cargo build --example hardware_test_ioctl
+sudo ./target/debug/examples/hardware_test_ioctl
 ```
 
 # Test
