@@ -1,5 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use crc::{Algorithm, Crc};
+use io_uring::{IoUring, opcode, types};
 use libc::ioctl;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -155,5 +156,70 @@ impl DifStorage {
         } else {
             Ok(())
         }
+    }
+}
+
+pub struct AsyncDifStorage {
+    file: std::fs::File,
+    ring: IoUring,
+}
+
+impl AsyncDifStorage {
+    pub fn new(path: &str, queue_depth: u32) -> std::io::Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(path)?;
+
+        // Создаем ринг с очередью глубиной queue_depth (например, 32)
+        let ring = IoUring::new(queue_depth)?;
+        Ok(Self { file, ring })
+    }
+
+    /// Отправляет запрос на запись DIF в очередь (не блокирует)
+    /// user_data — ID запроса, чтобы потом сопоставить результат
+    pub unsafe fn submit_write(
+        &mut self,
+        buffer: &DmaBuffer,
+        offset: u64,
+        user_data: u64,
+    ) -> std::io::Result<()> {
+        let write_e = opcode::Write::new(
+            types::Fd(self.file.as_raw_fd()),
+            buffer.as_ptr() as *const _,
+            buffer.size as u32,
+        )
+        .offset(offset)
+        .build()
+        .user_data(user_data);
+
+        // Помещаем в очередь отправки
+        self.ring.submission().push(&write_e).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::Other, "Submission queue is full")
+        })?;
+
+        // "Пингуем" ядро, чтобы оно начало обработку
+        self.ring.submit()?;
+        Ok(())
+    }
+
+    /// Собирает завершенные операции (блокирует до появления хотя бы одной)
+    pub fn wait_completions(&mut self) -> Vec<u64> {
+        let mut completed_ids = Vec::new();
+        self.ring.submit_and_wait(1).unwrap();
+
+        let mut cq = self.ring.completion();
+        while let Some(cqe) = cq.next() {
+            if cqe.result() >= 0 {
+                completed_ids.push(cqe.user_data());
+            } else {
+                eprintln!(
+                    "Ошибка IO: {}",
+                    std::io::Error::from_raw_os_error(-cqe.result())
+                );
+            }
+        }
+        completed_ids
     }
 }

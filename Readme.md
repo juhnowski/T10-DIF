@@ -8,6 +8,8 @@ Record structure:
 
 The library determines the minimum sector size of a disk.
 
+The library implements an asynchronous Request Queue, allowing for 32 or 64 DIF write requests to be sent in parallel—AsyncDifStorage. It manages the Submission Queue and Completion Queue using the io-uring library.
+
 # Run with file
 ```bash
 cargo build
@@ -25,6 +27,12 @@ With real block size supported by device /dev/sdb
 ```bash
 cargo build --example hardware_test_ioctl
 sudo ./target/debug/examples/hardware_test_ioctl
+```
+
+Async
+```bash
+cargo build --example async_demo
+sudo ./target/debug/examples/async_demo
 ```
 
 # Test
