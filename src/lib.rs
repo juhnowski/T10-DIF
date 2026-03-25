@@ -2,6 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use crc::{Algorithm, Crc};
 use io_uring::{IoUring, opcode, types};
 use libc::ioctl;
+use libc::iovec;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
@@ -79,6 +80,11 @@ impl DmaBuffer {
 
     pub fn as_ptr(&self) -> *mut libc::c_void {
         self.ptr
+    }
+
+    /// Предоставляет доступ к памяти как к срезу байтов (нужно для CRC)
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.size) }
     }
 }
 
@@ -194,12 +200,53 @@ impl AsyncDifStorage {
         .build()
         .user_data(user_data);
 
-        // Помещаем в очередь отправки
-        self.ring.submission().push(&write_e).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::Other, "Submission queue is full")
-        })?;
+        // В новых версиях Rust нужно явно писать unsafe блок внутри unsafe fn
+        unsafe {
+            self.ring
+                .submission()
+                .push(&write_e)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SQ Full"))?;
+        }
 
-        // "Пингуем" ядро, чтобы оно начало обработку
+        self.ring.submit()?;
+        Ok(())
+    }
+
+    /// Gather-запись: записывает данные из нескольких буферов в одно место на диске
+    pub unsafe fn submit_gather_write(
+        &mut self,
+        data_buf: &DmaBuffer,
+        dif_buf: &DmaBuffer,
+        offset: u64,
+        user_data: u64,
+    ) -> std::io::Result<()> {
+        let iov = [
+            libc::iovec {
+                iov_base: data_buf.as_ptr(),
+                iov_len: data_buf.size,
+            },
+            libc::iovec {
+                iov_base: dif_buf.as_ptr(),
+                iov_len: 8, // Только структура T10Dif
+            },
+        ];
+
+        let writev_e = opcode::Writev::new(
+            types::Fd(self.file.as_raw_fd()),
+            iov.as_ptr() as *const _,
+            2,
+        )
+        .offset(offset)
+        .build()
+        .user_data(user_data);
+
+        unsafe {
+            self.ring
+                .submission()
+                .push(&writev_e)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SQ Full"))?;
+        }
+
         self.ring.submit()?;
         Ok(())
     }

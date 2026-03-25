@@ -34,6 +34,17 @@ Async
 cargo build --example async_demo
 sudo ./target/debug/examples/async_demo
 ```
+У Acync были проблемы:
+```bash
+Отправка 4-х асинхронных запросов DIF...
+Запрос #0 успешно записан на диск через io_uring
+Запрос #1 успешно записан на диск через io_uring
+```
+Поэтому, чтобы не терять запросы, как в Async, добавлен цикл, который ждет именно столько ответов, сколько было отправлено.
+```bash
+cargo build --example async_demo_gather
+sudo ./target/debug/examples/async_demo_gather
+```
 
 # Test
 ```bash
