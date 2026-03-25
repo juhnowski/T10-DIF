@@ -47,7 +47,7 @@ sudo ./target/debug/examples/async_demo
 cargo build --example async_demo_gather
 sudo ./target/debug/examples/async_demo_gather
 ```
-У этого арианта проблемы с выравниванием  ```Invalid argument (os error 22)```
+У этого варианта проблемы с выравниванием  ```Invalid argument (os error 22)```
 Адрес в памяти должен быть выровнен по 512/4096 байт.
 В этой версии сегмент (DIF) имел длину 8 байт (iov_len: 8). Контроллер диска не может записать 8 байт напрямую в обход кэша, он умеет писать только целыми секторами.
 
@@ -57,6 +57,31 @@ sudo ./target/debug/examples/async_demo_gather
 cargo build --example combined_demo
 sudo ./target/debug/examples/combined_demo
 ```
+
+# hw_combined_test
+Пишет на стандартное устройство ```/dev/sdb1```
+```bash
+cargo build --example hw_combined_test
+sudo ./target/debug/examples/hw_combined_test
+```
+Результат:
+```text
+--- Тест Hardware Combined (Data+DIF) на /dev/sdb1 ---
+Отправка 4 блоков по 4608 байт...
+Блок #0 физически записан на диск.
+Блок #1 физически записан на диск.
+Блок #2 физически записан на диск.
+Блок #3 физически записан на диск.
+
+Чтение обратно для проверки целостности...
+Прочитанный DIF: T10Dif { guard_tag: 0, app_tag: 0, ref_tag: 0 }
+✅ CRC совпал! Данные на диске идентичны исходным.
+```
+
+У этого варианта есть недостаток - последовательный цикл подготовки DIF-меток. Расчет CRC на 4КБ данных — операция простая, но при потоке в несколько гигабайт в секунду один поток CPU станет «бутылочным горлышком».
+
+## Rayon
+
 
 
 # Test

@@ -2,7 +2,6 @@ use bytemuck::{Pod, Zeroable};
 use crc::{Algorithm, Crc};
 use io_uring::{IoUring, opcode, types};
 use libc::ioctl;
-use libc::iovec;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
