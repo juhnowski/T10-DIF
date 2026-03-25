@@ -2,10 +2,42 @@ use bytemuck::{Pod, Zeroable};
 use crc::{Algorithm, Crc};
 use io_uring::{IoUring, opcode, types};
 use libc::ioctl;
+use rayon::prelude::*;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::AsRawFd;
+
+// Разрешаем передачу буфера между потоками
+unsafe impl Send for DmaBuffer {}
+unsafe impl Sync for DmaBuffer {}
+
+impl T10Dif {
+    pub fn prepare_batch(buffers: &mut [DmaBuffer], start_lba: u64, app_tag: u16) {
+        // Теперь par_iter_mut заработает
+        buffers.par_iter_mut().enumerate().for_each(|(i, buf)| {
+            let current_lba = (start_lba + i as u64) as u32;
+
+            // Используем расчет CRC
+            // Важно: работаем через методы, которые мы определили ранее
+            let data = buf.as_slice_len(4096);
+            let dif_entry = T10Dif::compute(data, app_tag, current_lba);
+
+            // Записываем структуру в хвост (4096 байт)
+            unsafe {
+                let dif_ptr = (buf.as_ptr() as *mut u8).add(4096) as *mut T10Dif;
+                *dif_ptr = dif_entry;
+            }
+        });
+    }
+}
+
+impl DmaBuffer {
+    // Вспомогательный метод для получения среза нужной длины
+    pub fn as_slice_len(&self, len: usize) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, len) }
+    }
+}
 
 // Магическое число для получения размера логического сектора в Linux
 const BLKSSZGET: u64 = 0x1204;
@@ -81,9 +113,14 @@ impl DmaBuffer {
         self.ptr
     }
 
-    /// Предоставляет доступ к памяти как к срезу байтов (нужно для CRC)
+    /// Предоставляет доступ к памяти как к срезу байтов
     pub fn as_slice(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.size) }
+    }
+
+    /// Предоставляет изменяемый доступ к памяти как к срезу байтов
+    pub fn as_mut_slice_len(&mut self, len: usize) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr as *mut u8, len) }
     }
 
     /// Создает буфер для блока 4096 данных + 512 метаданных (итого 4608)
