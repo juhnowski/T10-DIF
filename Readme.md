@@ -184,4 +184,31 @@ cargo test
 ```bash
 git checkout -b dif-bench
 git switch -c dif-bench
+cargo build --release
+# Посмотреть справку
+sudo ./target/release/dif-bench --help
+# Запустить проверку 10 ГБ на диске sdb1 с глубиной очереди 64
+sudo ./target/release/dif-bench --device /dev/sdb1 --size-gb 10 --qd 64
+```
+результат:
+```bash
+[ilya@nixos:~/DIF]$ sudo ./target/release/dif-bench --help
+T10-DIF Hardware Integrity Bench
+
+Usage: dif-bench [OPTIONS] --device <DEVICE>
+
+Options:
+  -d, --device <DEVICE>    Путь к блочному устройству (напр. /dev/sdb1)
+  -s, --size-gb <SIZE_GB>  Объем данных для проверки в ГБ [default: 1]
+  -q, --qd <QD>            Глубина очереди (Queue Depth) для io_uring [default: 32]
+  -h, --help               Print help
+  -V, --version            Print version
+
+[ilya@nixos:~/DIF]$ sudo ./target/release/dif-bench --device /dev/sdb1 --size-gb 10 --qd 64
+🚀 Начинаем проверку /dev/sdb1 (10 ГБ, QD=64)
+  [00:02:23] [########################################] 2621440/2621440 blocks (Завершено)
+--- Итоги теста ---
+⏱ Время: 143.920648623s
+❌ Найдено повреждений данных (DIF errors): 0
+✅ Диск надежен. Silent Data Corruption не обнаружен.
 ```
