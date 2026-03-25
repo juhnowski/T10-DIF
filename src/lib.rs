@@ -86,6 +86,24 @@ impl DmaBuffer {
     pub fn as_slice(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.size) }
     }
+
+    /// Создает буфер для блока 4096 данных + 512 метаданных (итого 4608)
+    pub fn new_combined() -> io::Result<Self> {
+        Self::new(4096 + 512, 4096)
+    }
+
+    /// Срез для области данных (первые 4096 байт)
+    pub fn data_part_mut(&mut self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr as *mut u8, 4096) }
+    }
+
+    /// Ссылка на структуру DIF (начинается сразу после 4096 байт)
+    pub fn dif_part_mut(&mut self) -> &mut T10Dif {
+        unsafe {
+            let dif_ptr = (self.ptr as *mut u8).add(4096) as *mut T10Dif;
+            &mut *dif_ptr
+        }
+    }
 }
 
 impl Drop for DmaBuffer {
@@ -268,5 +286,32 @@ impl AsyncDifStorage {
             }
         }
         completed_ids
+    }
+
+    pub unsafe fn submit_combined_write(
+        &mut self,
+        buffer: &DmaBuffer,
+        offset: u64,
+        user_data: u64,
+    ) -> std::io::Result<()> {
+        // Пишем сразу 4608 байт
+        let write_e = opcode::Write::new(
+            types::Fd(self.file.as_raw_fd()),
+            buffer.as_ptr() as *const _,
+            4608,
+        )
+        .offset(offset)
+        .build()
+        .user_data(user_data);
+
+        unsafe {
+            self.ring
+                .submission()
+                .push(&write_e)
+                .map_err(|_| io::Error::new(io::ErrorKind::Other, "SQ Full"))?;
+        }
+
+        self.ring.submit()?;
+        Ok(())
     }
 }

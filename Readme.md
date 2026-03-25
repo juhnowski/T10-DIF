@@ -11,29 +11,31 @@ The library determines the minimum sector size of a disk.
 The library implements an asynchronous Request Queue, allowing for 32 or 64 DIF write requests to be sent in parallel—AsyncDifStorage. It manages the Submission Queue and Completion Queue using the io-uring library.
 
 # Run with file
+## initial dev stage
 ```bash
 cargo build
 cargo run --example demo
 ```
 
-# Run with real block device
-With fixed block size = 4Kb
+## With fixed block size = 4Kb
 ```bash
 cargo build --example hardware_test
 sudo ./target/debug/examples/hardware_test
 ```
 
-With real block size supported by device /dev/sdb
+## With real block size supported by device /dev/sdb
 ```bash
 cargo build --example hardware_test_ioctl
 sudo ./target/debug/examples/hardware_test_ioctl
 ```
 
-Async
+## Async
 ```bash
 cargo build --example async_demo
 sudo ./target/debug/examples/async_demo
 ```
+
+## Gather
 У Acync были проблемы:
 ```bash
 Отправка 4-х асинхронных запросов DIF...
@@ -45,6 +47,17 @@ sudo ./target/debug/examples/async_demo
 cargo build --example async_demo_gather
 sudo ./target/debug/examples/async_demo_gather
 ```
+У этого арианта проблемы с выравниванием  ```Invalid argument (os error 22)```
+Адрес в памяти должен быть выровнен по 512/4096 байт.
+В этой версии сегмент (DIF) имел длину 8 байт (iov_len: 8). Контроллер диска не может записать 8 байт напрямую в обход кэша, он умеет писать только целыми секторами.
+
+## combined_demo
+Решение проблемы - группировать записи DIF
+```bash
+cargo build --example combined_demo
+sudo ./target/debug/examples/combined_demo
+```
+
 
 # Test
 ```bash
