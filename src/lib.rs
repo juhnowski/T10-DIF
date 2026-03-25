@@ -8,6 +8,9 @@ use std::io;
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::AsRawFd;
 
+const RWF_FUA: i32 = 0x00000010;
+const RWF_DSYNC: i32 = 0x00000002;
+
 // Разрешаем передачу буфера между потоками
 unsafe impl Send for DmaBuffer {}
 unsafe impl Sync for DmaBuffer {}
@@ -101,6 +104,10 @@ impl DmaBuffer {
             }
         }
         Ok(Self { ptr, size })
+    }
+
+    pub fn new_aligned_pair() -> std::io::Result<Self> {
+        Self::new(8192, 4096)
     }
 
     /// Предоставляет доступ к памяти как к срезу структур DIF
@@ -229,12 +236,28 @@ impl AsyncDifStorage {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .custom_flags(libc::O_DIRECT)
+            // O_DIRECT — обход кэша ОС, O_SYNC — обход кэша диска
+            .custom_flags(libc::O_DIRECT | libc::O_SYNC)
             .open(path)?;
 
-        // Создаем ринг с очередью глубиной queue_depth (например, 32)
-        let ring = IoUring::new(queue_depth)?;
+        let ring = io_uring::IoUring::new(queue_depth)?;
         Ok(Self { file, ring })
+    }
+
+    /// Отправляет команду fsync в очередь io_uring
+    pub unsafe fn submit_fsync(&mut self, user_data: u64) -> std::io::Result<()> {
+        let fsync_e = io_uring::opcode::Fsync::new(io_uring::types::Fd(self.file.as_raw_fd()))
+            .build()
+            .user_data(user_data);
+
+        unsafe {
+            self.ring
+                .submission()
+                .push(&fsync_e)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SQ Full"))?;
+        }
+        self.ring.submit()?;
+        Ok(())
     }
 
     /// Отправляет запрос на запись DIF в очередь (не блокирует)
@@ -347,6 +370,59 @@ impl AsyncDifStorage {
                 .map_err(|_| io::Error::new(io::ErrorKind::Other, "SQ Full"))?;
         }
 
+        self.ring.submit()?;
+        Ok(())
+    }
+
+    // ЗАПИСЬ
+    pub unsafe fn submit_pair_write(
+        &mut self,
+        buf: &DmaBuffer,
+        offset: u64,
+        id: u64,
+    ) -> std::io::Result<()> {
+        let op = io_uring::opcode::Write::new(
+            io_uring::types::Fd(self.file.as_raw_fd()),
+            buf.as_ptr() as *const u8, // Явное приведение типов
+            8192,
+        )
+        .offset(offset)
+        .rw_flags(RWF_FUA | RWF_DSYNC)
+        .build()
+        .user_data(id);
+
+        unsafe {
+            self.ring
+                .submission()
+                .push(&op)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SQ Full"))?;
+        }
+        self.ring.submit()?;
+        Ok(())
+    }
+
+    // ЧТЕНИЕ
+    pub unsafe fn submit_pair_read(
+        &mut self,
+        buf: &mut DmaBuffer,
+        offset: u64,
+        id: u64,
+    ) -> std::io::Result<()> {
+        let op = io_uring::opcode::Read::new(
+            io_uring::types::Fd(self.file.as_raw_fd()),
+            buf.as_ptr() as *mut u8, // Явное приведение типов
+            8192,
+        )
+        .offset(offset)
+        .build()
+        .user_data(id);
+
+        unsafe {
+            self.ring
+                .submission()
+                .push(&op)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SQ Full"))?;
+        }
         self.ring.submit()?;
         Ok(())
     }

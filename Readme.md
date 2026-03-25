@@ -138,7 +138,12 @@ sudo ./target/debug/examples/stress_test_verify
 - хорошо для теста, но плохо для производительности
 - плохо, если диски будут без защиты по питанию. Если не делать синхронизацию, то нужны диски с энергонезависимым кэшем.
 
+## hw_4k_verify
 Добавлен метод ```submit_fsync```
+```bash
+cargo build --example hw_4k_verify
+sudo ./target/debug/examples/hw_4k_verify
+```
 
 # Test
 ```bash
