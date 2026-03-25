@@ -42,8 +42,8 @@ fn main() -> std::io::Result<()> {
         }
         wait_all(&mut storage, batch_size);
 
-        // Даем диску "выдохнуть"
-        std::thread::sleep(Duration::from_millis(50));
+        // Раскомментировать, если мы по каким то причинам не влияем на сброс кэша диска
+        // std::thread::sleep(Duration::from_millis(1));
 
         // 3. ЧТЕНИЕ
         for i in 0..batch_size {
@@ -62,10 +62,8 @@ fn main() -> std::io::Result<()> {
             // Берем DIF для записи и чтения
             let w = w_bufs[i].dif_part_mut();
 
-            // Чтобы не было конфликта заимствования,
-            // получаем r_dif и r_data через обычные срезы или по очереди
-            let r_dif = *r_bufs[i].dif_part_mut(); // Копируем структуру (она Copy)
-            let r_data = r_bufs[i].data_part_mut(); // Теперь это единственное заимствование
+            let r_dif = *r_bufs[i].dif_part_mut();
+            let r_data = r_bufs[i].data_part_mut();
 
             if w.guard_tag != r_dif.guard_tag {
                 let all_zeros = r_data.iter().all(|&x| x == 0);
